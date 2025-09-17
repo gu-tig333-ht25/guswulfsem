@@ -50,6 +50,7 @@ class _MyHomePageState extends State<MyHomePage> {
   void markDone(int index) {
     setState(() {
       tasks[index] = "${tasks[index]} (ok)";
+      tasks.add(tasks.removeAt(index));
     });
   }
 
