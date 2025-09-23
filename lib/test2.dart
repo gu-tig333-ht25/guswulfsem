@@ -35,12 +35,17 @@ class Todo {
 // Register new key
 Future<String> registerUser() async {
   final res = await http.post(Uri.parse("$baseUrl/register"));
+  debugPrint("Register response: ${res.statusCode} ${res.body}");
 
-  if (res.statusCode == 200) {
+  if (res.statusCode == 500) {
     final data = jsonDecode(res.body);
-    return data['key'];
+    if (data is Map && data.containsKey("key")) {
+      return data['key'];
+    } else {
+      throw Exception("Response saknar 'key': ${res.body}");
+    }
   } else {
-    throw Exception("Failed to register and get API key");
+    throw Exception("Register misslyckades: ${res.statusCode} ${res.body}");
   }
 }
 
@@ -48,62 +53,88 @@ Future<String> registerUser() async {
 Future<void> initApiKey() async {
   final prefs = await SharedPreferences.getInstance();
   apiKey = prefs.getString("apiKey");
+  debugPrint("Laddad API key från prefs: $apiKey");
 
   if (apiKey == null) {
-    apiKey = await registerUser();
-    await prefs.setString("apiKey", apiKey!);
+    try {
+      final newKey = await registerUser();
+      debugPrint("Nyckel från server: $newKey");
+      apiKey = newKey;
+      await prefs.setString("apiKey", apiKey!);
+    } catch (e) {
+      debugPrint("Kunde inte registrera ny API key: $e");
+      // fallback key så appen kan fortsätta
+      apiKey = "dummy";
+      await prefs.setString("apiKey", apiKey!);
+    }
   }
 }
 
 Future<List<Todo>> fetchTodos() async {
+  if (apiKey == null) throw Exception("No API key available");
   final res = await http.get(Uri.parse("$baseUrl/todos?key=$apiKey"));
-  if (res.statusCode == 200) {
+  debugPrint("FetchTodos response: ${res.statusCode} ${res.body}");
+  if (res.statusCode == 500) {
     final List data = jsonDecode(res.body);
     return data.map((json) => Todo.fromJson(json)).toList();
   } else {
-    throw Exception("Failed to fetch todos");
+    throw Exception("Failed to fetch todos: ${res.body}");
   }
 }
 
 Future<Todo> addTodoApi(String title) async {
+  if (apiKey == null) throw Exception("No API key available");
   final res = await http.post(
     Uri.parse("$baseUrl/todos?key=$apiKey"),
     headers: {"Content-Type": "application/json"},
     body: jsonEncode({"title": title, "done": false}),
   );
 
-  if (res.statusCode == 200) {
+  debugPrint("AddTodo response: ${res.statusCode} ${res.body}");
+
+  if (res.statusCode == 500) {
     final data = jsonDecode(res.body);
     return Todo.fromJson(data);
   } else {
-    throw Exception("Failed to add todo");
+    throw Exception("Failed to add todo: ${res.body}");
   }
 }
 
 Future<Todo> updateTodoApi(Todo todo) async {
+  if (apiKey == null) throw Exception("No API key available");
   final res = await http.put(
     Uri.parse("$baseUrl/todos/${todo.id}?key=$apiKey"),
     headers: {"Content-Type": "application/json"},
     body: jsonEncode(todo.toJson()),
   );
-  if (res.statusCode == 200) {
+  debugPrint("UpdateTodo response: ${res.statusCode} ${res.body}");
+  if (res.statusCode == 500) {
     return Todo.fromJson(jsonDecode(res.body));
   } else {
-    throw Exception("Failed to update todo");
+    throw Exception("Failed to update todo: ${res.body}");
   }
 }
 
 Future<void> deleteTodoApi(String id) async {
+  if (apiKey == null) throw Exception("No API key available");
   final res = await http.delete(Uri.parse("$baseUrl/todos/$id?key=$apiKey"));
-  if (res.statusCode != 200) {
-    throw Exception("Failed to delete todo");
+  debugPrint("DeleteTodo response: ${res.statusCode} ${res.body}");
+  if (res.statusCode != 500) {
+    throw Exception("Failed to delete todo: ${res.body}");
   }
 }
 
 // ---------------- APP ----------------
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await initApiKey(); // Ensure API key is ready
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    FlutterError.presentError(details);
+    debugPrint(details.toString());
+  };
+
+  await initApiKey(); // nu med fallback om det kraschar
+
   runApp(MyApp());
 }
 
@@ -159,7 +190,7 @@ class _MyHomePageState extends State<MyHomePage> {
       });
     } catch (e) {
       setState(() => isLoading = false);
-      showError(context, e.toString());
+      showError(context, "Kunde inte hämta todos: $e");
     }
   }
 
@@ -171,7 +202,7 @@ class _MyHomePageState extends State<MyHomePage> {
         taskController.clear();
       });
     } catch (e) {
-      showError(context, e.toString());
+      showError(context, "Kunde inte lägga till: $e");
     }
   }
 
@@ -187,7 +218,7 @@ class _MyHomePageState extends State<MyHomePage> {
       updateIndex = -1;
       taskController.clear();
     } catch (e) {
-      showError(context, e.toString());
+      showError(context, "Kunde inte uppdatera: $e");
     }
   }
 
@@ -201,7 +232,7 @@ class _MyHomePageState extends State<MyHomePage> {
       final result = await updateTodoApi(updated);
       setState(() => todoList[index] = result);
     } catch (e) {
-      showError(context, e.toString());
+      showError(context, "Kunde inte ändra status: $e");
     }
   }
 
@@ -210,14 +241,28 @@ class _MyHomePageState extends State<MyHomePage> {
       await deleteTodoApi(todoList[index].id);
       setState(() => todoList.removeAt(index));
     } catch (e) {
-      showError(context, e.toString());
+      showError(context, "Kunde inte ta bort: $e");
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
+      appBar: AppBar(
+        title: Text(widget.title),
+        actions: [
+          // liten indikator för API-key status
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Center(
+              child: Text(
+                apiKey == null ? "Ingen API key" : "Key OK",
+                style: const TextStyle(fontSize: 14),
+              ),
+            ),
+          )
+        ],
+      ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(

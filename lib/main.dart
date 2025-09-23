@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 
 getTodoDetails() async {
-  const url = "https://todoapp-api.apps.k8s.gu.se/";
+  const url = "https://todoapp-api.apps.k8s.gu.se/todos?key=4a3751fa-fbdb-4058-8f31-3a5824d7a82c";
   try {
     http.Response res = await http.get(Uri.parse(url));
     print(res.body);
