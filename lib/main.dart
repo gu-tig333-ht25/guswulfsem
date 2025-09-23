@@ -1,4 +1,38 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
+getTodoDetails() async {
+  const url = "https://todoapp-api.apps.k8s.gu.se/";
+  try {
+    http.Response res = await http.get(Uri.parse(url));
+    print(res.body);
+  } catch (err){
+    print(err.toString());
+  }
+}
+
+class Todo {
+  final String id;
+  final String title;
+  final bool done;
+
+  Todo({required this.id, required this.title, required this.done});
+
+  factory Todo.fromJson(Map<String, dynamic> json) {
+    return Todo(
+      id: json['id'],
+      title: json['title'],
+      done: json['done'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'title': title,
+      'done': done,
+    };
+  }
+}
 
 void main() {
   runApp(MyApp());
