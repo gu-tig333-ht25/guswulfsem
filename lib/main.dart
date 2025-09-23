@@ -21,7 +21,7 @@ class MyApp extends StatelessWidget {
 }
 
 class MyHomePage extends StatefulWidget {
-  MyHomePage({super.key, required this.title});
+  const MyHomePage({super.key, required this.title});
 
   final String title;
 
@@ -29,87 +29,130 @@ class MyHomePage extends StatefulWidget {
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
+List<Map<String, dynamic>> todoList = [];
+final TextEditingController taskController = TextEditingController();
+int updateIndex = -1;
+
 class _MyHomePageState extends State<MyHomePage> {
-  final List<String> tasks = [];
-  final TextEditingController taskController = TextEditingController();
-
-  void addTask(String task) {
-    if (task.isEmpty) return;
+  void deleteItem(int index) {
     setState(() {
-      tasks.add(task);
-    });
-    taskController.clear();
-  }
-
-  void deleteTask(int index) {
-    setState(() {
-      tasks.removeAt(index);
+      todoList.removeAt(index);
     });
   }
 
+  void addList(String task) {
+    setState(() {
+      todoList.add({"title": task, "done": false});
+      taskController.clear();
+    });
+  }
+
+  // update task
+  void updateListItem(String task, int index) {
+    setState(() {
+      todoList[index]["title"] = task;
+      updateIndex = -1;
+      taskController.clear();
+    });
+  }
+
+  // toggle done/undone
   void markDone(int index) {
     setState(() {
-      tasks[index] = "${tasks[index]} (ok)";
+      todoList[index]["done"] = !todoList[index]["done"];
     });
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: taskController,
-                    decoration: InputDecoration(
-                      hintText: "Enter a task",
-                      border: OutlineInputBorder(),
-                    ),
+
+@override
+Widget build(BuildContext context) {
+  return Scaffold(
+    appBar: AppBar(
+      title: Text(widget.title),
+    ),
+    body: Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        children: [
+          // input field + button
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: taskController,
+                  decoration: const InputDecoration(
+                    hintText: "Enter a task",
+                    border: OutlineInputBorder(),
                   ),
                 ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () => addTask(taskController.text),
-                  child: const Text("Add"),
-                ),
-              ],
-            ),
-            const SizedBox(height: 20),
-            Expanded(
-              child: ListView.builder(
-                itemCount: tasks.length,
-                itemBuilder: (context, index) {
-                  return Card(
-                    child: ListTile(
-                      title: Text(tasks[index]),
-                      trailing: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.check, color: Colors.green),
-                            onPressed: () => markDone(index),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () => deleteTask(index),
-                          ),
-                        ],
+              ),
+              const SizedBox(width: 8),
+              ElevatedButton(
+                onPressed: () {
+                  if (taskController.text.isNotEmpty) {
+                    if (updateIndex == -1) {
+                      addList(taskController.text);
+                    } else {
+                      updateListItem(taskController.text, updateIndex);
+                    }
+                  }
+                },
+                child: Text(updateIndex == -1 ? "Add" : "Update"),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          // tasks list
+          Expanded(
+            child: ListView.builder(
+              itemCount: todoList.length,
+              itemBuilder: (context, index) {
+                return Card(
+                  child: ListTile(
+                    title: Text(
+                      todoList[index]["title"],
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w500,
+                        decoration: todoList[index]["done"]
+                            ? TextDecoration.lineThrough
+                            : TextDecoration.none,
                       ),
                     ),
-                  );
-                },
-              ),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: Icon(
+                            todoList[index]["done"]
+                                ? Icons.check_box
+                                : Icons.check_box_outline_blank,
+                            color: Colors.green,
+                          ),
+                          onPressed: () => markDone(index),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.edit, color: Colors.blue),
+                          onPressed: () {
+                            setState(() {
+                              taskController.text = todoList[index]["title"];
+                              updateIndex = index;
+                            });
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => deleteItem(index),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
-}
+    ),
+  );
+}}
