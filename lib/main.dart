@@ -1,11 +1,12 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
 
+/// API Setup 
 const String apiKey = "4a3751fa-fbdb-4058-8f31-3a5824d7a82c";
 const String baseUrl = "https://todoapp-api.apps.k8s.gu.se/todos";
 
-// API key so i dont need to type it out every time
 String buildUrl([String path = ""]) {
   if (path.isNotEmpty) {
     return "$baseUrl/$path?key=$apiKey";
@@ -29,15 +30,69 @@ class Todo {
   }
 
   Map<String, dynamic> toJson() {
-    return {
-      "title": title,
-      "done": done,
-    };
+    return {"title": title, "done": done};
+  }
+}
+
+class TodoProvider extends ChangeNotifier {
+  List<Todo> _todos = [];
+  List<Todo> get todos => _todos;
+
+  Future<void> fetchTodos() async {
+    final res = await http.get(Uri.parse(buildUrl()));
+    if (res.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(res.body);
+      _todos = data.map((e) => Todo.fromJson(e)).toList();
+      notifyListeners();
+    } else {
+      debugPrint("Fetch failed: ${res.body}");
+    }
+  }
+
+  Future<void> addTodo(String title) async {
+    if (title.trim().isEmpty) return;
+    final res = await http.post(
+      Uri.parse(buildUrl()),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode({"title": title, "done": false}),
+    );
+    if (res.statusCode == 200) {
+      await fetchTodos();
+    } else {
+      debugPrint("Add failed: ${res.body}");
+    }
+  }
+
+  Future<void> updateTodo(Todo todo) async {
+    final res = await http.put(
+      Uri.parse(buildUrl(todo.id)),
+      headers: {"Content-Type": "application/json"},
+      body: jsonEncode(todo.toJson()),
+    );
+    if (res.statusCode == 200) {
+      await fetchTodos();
+    } else {
+      debugPrint("Update failed: ${res.body}");
+    }
+  }
+
+  Future<void> deleteTodo(String id) async {
+    final res = await http.delete(Uri.parse(buildUrl(id)));
+    if (res.statusCode == 200) {
+      await fetchTodos();
+    } else {
+      debugPrint("Delete failed: ${res.body}");
+    }
   }
 }
 
 void main() {
-  runApp(const MyApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => TodoProvider()..fetchTodos(),
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -65,123 +120,39 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
-  List<Todo> todoList = [];
-  final TextEditingController taskController = TextEditingController();
-  int updateIndex = -1;
-
-  // Fetch todos
-  Future<void> fetchTodos() async {
-    final res = await http.get(Uri.parse(buildUrl()));
-    if (res.statusCode == 200) {
-      final List<dynamic> data = jsonDecode(res.body);
-      setState(() {
-        todoList = data.map((e) => Todo.fromJson(e)).toList();
-      });
-    } else {
-      debugPrint("Fetch failed: ${res.body}");
-    }
-  }
-
-  // Add todo
-  Future<void> addTodo(String title) async {
-    if (title.trim().isEmpty) return; // prevent null/empty sends
-    final body = {"title": title.trim(), "done": false};
-    debugPrint("Sending addTodo: $body");
-    final res = await http.post(
-      Uri.parse(buildUrl()),
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode(body),
-    );
-    if (res.statusCode == 200) {
-      await fetchTodos();
-    } else {
-      debugPrint("Add failed: ${res.body}");
-    }
-  }
-
-  // Update todo
-  Future<void> updateTodo(Todo todo) async {
-    if (todo.title.trim().isEmpty) return; // prevent null/empty sends
-    debugPrint("Sending updateTodo: ${todo.toJson()}");
-    final res = await http.put(
-      Uri.parse(buildUrl(todo.id)),
-      headers: {"Content-Type": "application/json"},
-      body: jsonEncode(todo.toJson()),
-    );
-    if (res.statusCode == 200) {
-      await fetchTodos();
-    } else {
-      debugPrint("Update failed: ${res.body}");
-    }
-  }
-
-  // Delete todo
-  Future<void> deleteTodo(String id) async {
-    final res = await http.delete(Uri.parse(buildUrl(id)));
-    if (res.statusCode == 200) {
-      await fetchTodos();
-    } else {
-      debugPrint("Delete failed: ${res.body}");
-    }
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    fetchTodos();
-  }
-
   @override
   Widget build(BuildContext context) {
+    final todoProvider = Provider.of<TodoProvider>(context);
+
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
+
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // Input + button
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: taskController,
-                    decoration: const InputDecoration(
-                      hintText: "Enter a task",
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton(
-                  onPressed: () {
-                    if (taskController.text.isNotEmpty) {
-                      if (updateIndex == -1) {
-                        addTodo(taskController.text);
-                      } else {
-                        final todo = todoList[updateIndex];
-                        updateTodo(Todo(
-                          id: todo.id,
-                          title: taskController.text,
-                          done: todo.done,
-                        ));
-                        setState(() {
-                          updateIndex = -1;
-                        });
-                      }
-                      taskController.clear();
-                    }
-                  },
-                  child: Text(updateIndex == -1 ? "Add" : "Update"),
-                ),
-              ],
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.add),
+                label: const Text("Add New Task"),
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AddTodoPage()),
+                  );
+                },
+              ),
             ),
+
             const SizedBox(height: 20),
-            // Todo list
+
+            /// Todo list
             Expanded(
               child: ListView.builder(
-                itemCount: todoList.length,
+                itemCount: todoProvider.todos.length,
                 itemBuilder: (context, index) {
-                  final todo = todoList[index];
+                  final todo = todoProvider.todos[index];
                   return Card(
                     child: ListTile(
                       title: Text(
@@ -197,6 +168,7 @@ class _MyHomePageState extends State<MyHomePage> {
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          /// Toggle done
                           IconButton(
                             icon: Icon(
                               todo.done
@@ -205,25 +177,26 @@ class _MyHomePageState extends State<MyHomePage> {
                               color: Colors.green,
                             ),
                             onPressed: () {
-                              updateTodo(Todo(
-                                id: todo.id,
-                                title: todo.title,
-                                done: !todo.done,
-                              ));
+                              todoProvider.updateTodo(
+                                Todo(
+                                  id: todo.id,
+                                  title: todo.title,
+                                  done: !todo.done,
+                                ),
+                              );
                             },
                           ),
+
                           IconButton(
                             icon: const Icon(Icons.edit, color: Colors.blue),
                             onPressed: () {
-                              setState(() {
-                                taskController.text = todo.title;
-                                updateIndex = index;
-                              });
                             },
                           ),
+
+                          /// Delete
                           IconButton(
                             icon: const Icon(Icons.delete, color: Colors.red),
-                            onPressed: () => deleteTodo(todo.id),
+                            onPressed: () => todoProvider.deleteTodo(todo.id),
                           ),
                         ],
                       ),
@@ -231,6 +204,51 @@ class _MyHomePageState extends State<MyHomePage> {
                   );
                 },
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ==== Add Todo Page ====
+class AddTodoPage extends StatefulWidget {
+  const AddTodoPage({super.key});
+
+  @override
+  State<AddTodoPage> createState() => _AddTodoPageState();
+}
+
+class _AddTodoPageState extends State<AddTodoPage> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  Widget build(BuildContext context) {
+    final todoProvider = Provider.of<TodoProvider>(context, listen: false);
+
+    return Scaffold(
+      appBar: AppBar(title: const Text("Add New Todo")),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            TextField(
+              controller: _controller,
+              decoration: const InputDecoration(
+                hintText: "Enter task title",
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: () async {
+                if (_controller.text.isNotEmpty) {
+                  await todoProvider.addTodo(_controller.text);
+                  Navigator.pop(context); // go back after adding
+                }
+              },
+              child: const Text("Save"),
             ),
           ],
         ),
